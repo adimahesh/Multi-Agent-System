@@ -1,0 +1,6 @@
+/.venv
+/streamlit_app
+/__pycache__
+/.env
+
+
