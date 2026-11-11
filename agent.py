@@ -1,29 +1,61 @@
+import os
+
+from dotenv import load_dotenv
 from langchain.agents import create_agent
-# from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from tools import tavily_search,scrap_url
-from dotenv import load_dotenv
-from langchain_mistralai import ChatMistralAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-load_dotenv()
+from tools import tavily_search, scrap_url
 
-llm = ChatMistralAI(model="mistral-small-2506",temperature=0)
-#1st agent
+
+# Load .env from the project directory and prefer it over stale Windows
+# environment variables. Never print the API key.
+load_dotenv(override=True)
+
+api_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip()
+
+if not api_key:
+    raise RuntimeError(
+        "Google Gemini API key is missing. Add GOOGLE_API_KEY to your .env file."
+    )
+
+# Gemini model used by all four stages.
+# You can override it in .env with GEMINI_MODEL=...
+model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+
+llm = ChatGoogleGenerativeAI(
+    model=model_name,
+    temperature=0,
+    google_api_key=api_key,
+)
+
+
+# 1. Search Agent
 def build_search_agent():
     return create_agent(
-        model = llm,
-        tools=[tavily_search]
+        model=llm,
+        tools=[tavily_search],
     )
-#2nd agent
+
+
+# 2. Reader Agent
 def build_reader_agent():
     return create_agent(
         model=llm,
-        tools=[scrap_url]
+        tools=[scrap_url],
     )
+
+
+# 3. Writer Chain
 writer_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are an expert research writer. Write clear, structured and insightful reports."),
-    ("human", """Write a detailed research report on the topic below.
+    (
+        "system",
+        "You are an expert research writer. Write clear, structured and insightful reports."
+    ),
+    (
+        "human",
+        """Write a detailed research report on the topic below.
 
 Topic: {topic}
 
@@ -36,16 +68,22 @@ Structure the report as:
 - Conclusion
 - Sources (list all URLs found in the research)
 
-Be detailed, factual and professional."""),
+Be detailed, factual and professional."""
+    ),
 ])
 
 writer_chain = writer_prompt | llm | StrOutputParser()
 
-#critic_chain 
 
+# 4. Critic Chain
 critic_prompt = ChatPromptTemplate.from_messages([
-     ("system", "You are a sharp and constructive research critic. Be honest and specific."),
-    ("human", """Review the research report below and evaluate it strictly.
+    (
+        "system",
+        "You are a sharp and constructive research critic. Be honest and specific."
+    ),
+    (
+        "human",
+        """Review the research report below and evaluate it strictly.
 
 Report:
 {report}
@@ -63,7 +101,8 @@ Areas to Improve:
 - ...
 
 One line verdict:
-..."""),
+..."""
+    ),
 ])
 
 critic_chain = critic_prompt | llm | StrOutputParser()
